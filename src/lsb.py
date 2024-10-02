@@ -8,18 +8,20 @@ from Crypto.Util.Padding import pad, unpad
 from Crypto.Util.number import long_to_bytes, bytes_to_long
 import colorsys
 from Crypto.Protocol.SecretSharing import Shamir
+from utils import bytes_to_bits_binary, bits_binary_to_int, int_to_bits_binary, \
+    bits_binary_to_bytes, get_hsv, change_v_bits
 
-IMAGE_PATH = '/Users/vaksenov001/Downloads/6_1_test.png'
+IMAGE_PATH = '/Users/vaksenov001/Downloads/photo1697439494.jpeg'
 KEY_FILENAME = './private_key.der'
 SAVE_PATH = './stego_image'
 SECRET = 'secret'
-FORMAT = '.png' # always use png format
+FORMAT = '.png'  # always use png format
 
 
 def shamir_split_secret(secret: str, required_shares: int,
                         distributed_shares: int):
     # encode to a 16 byte string
-    secret = pad(secret.encode("utf-8"), 16) #
+    secret = pad(secret.encode("utf-8"), 16)
     return Shamir.split(k=required_shares, n=distributed_shares, secret=secret)
 
 
@@ -33,6 +35,7 @@ def get_all_shares_len(shares: list):
     shares: set of shares
     return sum of all shares len
     '''
+    shares = [(share[0], bytes_to_bits_binary(share[1])) for share in shares]
     return sum([len(share[1]) for share in shares])
 
 
@@ -176,28 +179,28 @@ def embed_share_to_block(block: Image, share: str):
     return block with embedded shares
     '''
     # embed share to block
-    number = share[0]
-    secret = str(bytes_to_long(share[1]))
-    secret_len = len(secret)
+    number = int_to_bits_binary(int(share[0]))
+    secret = bytes_to_bits_binary(share[1])
+    secret_len = int_to_bits_binary(len(secret))
     # split secret to bytes
     block = block.convert('RGB')
     pixels = list(block.getdata())
-    # for each pixel in block
-    # embed first 3 bytes of share to pixel
-    # and delete first 3 bytes of share
     for i, pixel in enumerate(pixels):
         if len(secret) == 0:
             break
-        r, g, b = pixel
-        h, s, v = colorsys.rgb_to_hsv(r, g, b)
-        # secret is bytes string
-        if i == 0:
-            v = secret_len
-        elif i == 1:
-            v = int(number)
+        h, s, v = get_hsv(pixel)
+        # change v last bits
+        temp_bits_v = int_to_bits_binary(int(v))
+        # first 8 pixels are for share number
+        # next 8 pixels are for share length
+        # next pixels are for share
+        if i < 8:
+            temp_bits_v, number = change_v_bits(temp_bits_v, number)
+        elif i < 16:
+            temp_bits_v, secret_len = change_v_bits(temp_bits_v, secret_len)
         else:
-            v = int(secret[0])
-            secret = secret[1:]
+            temp_bits_v, secret = change_v_bits(temp_bits_v, secret)
+        v = bits_binary_to_int(temp_bits_v)
         r, g, b = colorsys.hsv_to_rgb(h, s, v)
         pixels[i] = (int(r), int(g), int(b))
     block.putdata(pixels)
@@ -213,17 +216,28 @@ def extract_share_from_block(block: Image):
     block = block.convert('RGB')
     pixels = list(block.getdata())
     share = ''
-    r,g,b = pixels[0]
-    h,s,v = colorsys.rgb_to_hsv(r, g, b)
-    share_len = int(v)
-
-    r,g,b = pixels[1]
-    h,s,v = colorsys.rgb_to_hsv(r, g, b)
-    share_num = int(v)
-    for i in range(2,share_len+2):
-        r, g, b = pixels[i]
-        h, s, v = colorsys.rgb_to_hsv(r, g, b)
-        share += str(v)
+    share_num = ''
+    share_len = ''
+    for i, pixel in enumerate(pixels):
+        h, s, v = get_hsv(pixel)
+        # first 8 pixels are for share number
+        # next 8 pixels are for share length
+        # next pixels till 16 + share length are for share
+        if i < 8:
+            temp_bits_v = int_to_bits_binary(int(v))
+            print(temp_bits_v)
+            share_num += temp_bits_v[-1]
+        elif i < 16:
+            temp_bits_v = int_to_bits_binary(int(v))
+            share_len += temp_bits_v[-1]
+        elif i < 16 + bits_binary_to_int(share_len):
+            temp_bits_v = int_to_bits_binary(int(v))
+            share += temp_bits_v[-1]
+        else:
+            break
+    share_num = bits_binary_to_int(share_num)
+    print('debug share: ', share, share_num)
+    share = bits_binary_to_bytes(share)
     return share_num, share
 
 def embed_shares_to_blocks(blocks: list, shares: list):
@@ -246,6 +260,7 @@ def stego_image(shamirs_k: int, shamirs_n: int):
     image = Image.open(Path(IMAGE_PATH))
     # разбиение секрета на части
     secret = shamir_split_secret(SECRET, shamirs_k, shamirs_n)
+    print('1: ', secret)
     # Второй этап
     # подсчитываем вместимость w
     w = get_w(image.size, get_all_shares_len(secret))
@@ -291,7 +306,8 @@ def decrypt_stego_image(stego_image: Path):
     shares = []
     for block in blocks:
         shares.append(extract_share_from_block(block))
-    shares = [(i, long_to_bytes(int(j))) for i, j in shares]
+    print('2: ', shares)
+    #shares = [(i, long_to_bytes(int(j))) for i, j in shares]
     # удалить дубликаты по первому элементу
     shares = dict(shares)
     shares = [(i, shares[i]) for i in shares]
@@ -302,7 +318,7 @@ def decrypt_stego_image(stego_image: Path):
     return secret
 
 
-# stego_image(shamirs_k=3, shamirs_n=5)
+stego_image(shamirs_k=3, shamirs_n=5)
 print(decrypt_stego_image(Path(SAVE_PATH + FORMAT)))
 
 
