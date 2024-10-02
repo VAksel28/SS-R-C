@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "stegonography"
+version = "0.1.0"
+description = ""
+authors = ["Vsevolod  Aksenov <vsevolod.aksenov@tedo.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pillow = "^10.4.0"
+sslib = "^0.2.0"
+numpy = "^2.0.1"
+pycryptodome = "^3.20.0"
+crypto = "^1.4.1"
+ipykernel = "^6.29.5"
+stegano = "0.4.5"
+opencv-python = "^4.10.0.84"
+scipy = "^1.14.1"
+pywavelets = "^1.7.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
