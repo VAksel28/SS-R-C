@@ -106,19 +106,20 @@ def load_rsa_key(filename: str):
     return key
 
 
-def encrypt_num_cols_rsa(num_cols: int, key: RSA):
+def encrypt_num_cols_and_k_rsa(num_cols: int,k:int, key: RSA):
     '''
     num_cols: number of cols
     key: RSA key
     return encrypted num_cols
     '''
+    message = str.encode(str(num_cols) + '_' + str(k))
     publickey = key.publickey()
     encryptor = PKCS1_OAEP.new(publickey)
-    encrypted = encryptor.encrypt(long_to_bytes(num_cols))
+    encrypted = encryptor.encrypt(message)
     return encrypted
 
 
-def decrypt_num_cols_rsa(encrypted: bytes, key: RSA):
+def decrypt_num_cols_and_k_rsa(encrypted: bytes, key: RSA):
     '''
     encrypted: encrypted num_cols
     key: RSA key
@@ -126,7 +127,9 @@ def decrypt_num_cols_rsa(encrypted: bytes, key: RSA):
     '''
     decryptor = PKCS1_OAEP.new(key)
     decrypted = decryptor.decrypt(encrypted)
-    return bytes_to_long(decrypted)
+    decrypted = decrypted.decode('utf-8')
+    print(decrypted.split('_'))
+    return int(decrypted.split('_')[0]), int(decrypted.split('_')[1])
 
 
 
@@ -207,6 +210,7 @@ def extract_share_from_block(block: Image):
     return extracted share
     '''
     # extract share from block
+    block = block.convert('RGB')
     pixels = list(block.getdata())
     share = ''
     r,g,b = pixels[0]
@@ -257,7 +261,7 @@ def stego_image(shamirs_k: int, shamirs_n: int):
         # сохраняем изображение
         stego_image.save(Path(SAVE_PATH + FORMAT))
         # шифруем и сохраняем количество столбцов
-        encrypted_cols = encrypt_num_cols_rsa(cols, load_rsa_key(KEY_FILENAME))
+        encrypted_cols = encrypt_num_cols_and_k_rsa(cols,shamirs_k, load_rsa_key(KEY_FILENAME))
         with open(Path(SAVE_PATH + '_cols.txt'), 'wb') as f:
             f.write(encrypted_cols)
         return Path(SAVE_PATH + FORMAT)
@@ -278,7 +282,7 @@ def decrypt_stego_image(stego_image: Path):
     with open(Path(SAVE_PATH + '_cols.txt'), 'rb') as f:
         encrypted_cols = f.read()
     # расшифровываем количество столбцов
-    num_cols = decrypt_num_cols_rsa(encrypted_cols, key)
+    num_cols, k = decrypt_num_cols_and_k_rsa(encrypted_cols, key)
     # подсчитываем количество строк
     num_rows = math.ceil(len(SECRET) / num_cols)
     # разбиваем изображение на блоки
@@ -288,15 +292,17 @@ def decrypt_stego_image(stego_image: Path):
     for block in blocks:
         shares.append(extract_share_from_block(block))
     shares = [(i, long_to_bytes(int(j))) for i, j in shares]
-    shares = set(shares)
-    shares = list(shares)
-    print('shares: ', shares)
+    # удалить дубликаты по первому элементу
+    shares = dict(shares)
+    shares = [(i, shares[i]) for i in shares]
+    shares.sort(key=lambda x: x[0])
+    shares = shares[0:k]
     # восстанавливаем секрет
     secret = shamir_recover_shares(shares)
     return secret
 
 
-stego_image(shamirs_k=3, shamirs_n=5)
+# stego_image(shamirs_k=3, shamirs_n=5)
 print(decrypt_stego_image(Path(SAVE_PATH + FORMAT)))
 
 
